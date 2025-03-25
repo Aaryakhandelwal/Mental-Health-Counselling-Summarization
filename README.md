@@ -44,18 +44,14 @@ The preprocessing step is crucial for transforming raw conversation data into a 
 
 The Mental Health Summarization project aims to develop models that can effectively summarize therapist-client conversations. The methodology involves several key steps:
 
-1. **Data Collection and Preprocessing**:
-   - The dataset consists of therapist-client conversations, which are preprocessed to extract primary and secondary topics, as well as summaries.
-   - Emotion scores are computed for each conversation to enrich the dataset with additional context.
-
-2. **Model Selection**:
+1. **Model Selection**:
    - Two models were selected for the task: Pegasus and T5. Both models are well-suited for sequence-to-sequence tasks like summarization.
 
-3. **Training**:
+2. **Training**:
    - The models are trained on the preprocessed dataset using a training-validation split.
    - Early stopping is employed to prevent overfitting, with the best model saved based on validation loss.
 
-4. **Evaluation**:
+3. **Evaluation**:
    - The models are evaluated using standard metrics such as ROUGE, BLEU, BERTScore, and BLEURT.
    - These metrics provide insights into the quality of the generated summaries compared to the reference summaries.
 
