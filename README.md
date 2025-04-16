@@ -15,69 +15,157 @@ Each sample in the dataset contains:
 
 ## Data Preprocessing
 
-The preprocessing step is crucial for transforming raw conversation data into a structured format that can be used for training and evaluating summarization models. The preprocessing script processes CSV files containing therapist-client conversations and performs the following operations:
+### 4.1 Preprocessing and Structuring Dialogues
 
-1. **File Handling**:
-   - The script processes all CSV files in the specified folder, reading each file into a DataFrame.
+1. **Remove Non-Essential Entries**
+   - Eliminate metadata fields such as `primary_topic`, `secondary_topic`, and `summary`.
+   - Remove filler words or entries not useful for downstream tasks.
 
-2. **Topic and Summary Extraction**:
-   - Extracts the primary topic, secondary topic, and summary from specific rows in the "Utterance" column.
-   - If these elements are missing, default values are assigned: "Unknown" for topics and "No summary available" for summaries.
+2. **Compute Global Emotion Score**
+   - Average all emotion values across the dialogue to compute a single emotion score representing the emotional tone of the conversation.
 
-3. **Data Cleaning**:
-   - Removes rows that contain the labels "Primary Topic", "Secondary Topic", and "Summary" to focus on the actual dialogue content.
+3. **Restructure Utterances**
+   - Each utterance is reformatted for consistency and to preserve key contextual information:
+     ```
+     Speaker [DialogueFunction=...] (Sub_topic=...) (Emotion=...): <utterance_text>
+     ```
+   - Example:
+     ```
+     Therapist [DialogueFunction=question] (Sub_topic=routine) (Emotion=1): How have you been sleeping lately?
+     ```
 
-4. **Emotion Processing**:
-   - Converts the "Emotion" column to numeric values, handling any non-numeric entries by replacing them with zero.
-   - Computes the global emotion score as the mean of the emotion values for each conversation.
+4. **Flatten Dialogues**
+   - Dialogues are flattened into a list of structured utterances to facilitate model input.
 
-5. **Output Formatting**:
-   - Writes the processed data to an output file, including:
-     - A header with the primary topic, secondary topic, and global emotion score.
-     - Each dialogue line with the speaker, dialogue function, sub-topic, emotion, and cleaned utterance.
-     - The summary of the conversation.
+---
 
-6. **Output**:
-   - The preprocessed data is saved to a specified output file, ready for use in model training and evaluation.
+### 4.2 Modeling Relevance using Sentiment and PHQ-9 Cues
+
+1. **Sentiment Classification**
+   - A RoBERTa-base model is fine-tuned on the dialogue data to classify each utterance into:
+     - Positive
+     - Neutral
+     - Negative
+   - **Sentiment Score** is computed using model probabilities:
+     ```
+     Sentiment Score = P_positive − P_negative
+     ```
+
+2. **PHQ-9 Signal Detection**
+   - Each utterance is evaluated based on two PHQ-9-based components:
+     - **Keyword Match Score**: Presence of depression-related terms (e.g., "worthless", "fatigue", "better off dead").
+     - **Embedding Similarity Score**: Cosine similarity with PHQ-9 item sentence embeddings using `all-MiniLM-L6-v2`.
+
+   - **PHQ Score** is calculated as:
+     ```
+     PHQ Score = α · Embedding Score + β · Match Score
+     ```
+     Where:
+     - α = 1.0
+     - β = 0.5
+
+3. **Compute Relevance Score**
+   - Final relevance score for each utterance:
+     ```
+     Relevance Score = 2 · |Sentiment Score| + 1.5 · PHQ Score
+     ```
+
+4. **Label Relevance**
+   - Utterances are tagged as:
+     - `(Relevance=High)` if the score exceeds a predefined threshold
+     - `(Relevance=Low)` otherwise
+
+5. **Append Relevance Labels**
+   - These labels are added to each utterance's metadata from the previous preprocessing step and used as auxiliary signals during summarization model training.
+
 
 ## Methodology
 
-The Mental Health Summarization project aims to develop models that can effectively summarize therapist-client conversations. The methodology involves several key steps:
+### Baselines
 
-1. **Model Selection**:
-   - Two models were selected for the task: Pegasus and T5. Both models are well-suited for sequence-to-sequence tasks like summarization.
+Our methodology begins with strong pretrained **abstractive summarization models**, which serve both as **benchmarks** and as **foundational architectures** for subsequent enhancements.
 
-2. **Training**:
-   - The models are trained on the preprocessed dataset using a training-validation split.
-   - Early stopping is employed to prevent overfitting, with the best model saved based on validation loss.
+We selected the following baseline models:
 
-3. **Evaluation**:
-   - The models are evaluated using standard metrics such as ROUGE, BLEU, BERTScore, and BLEURT.
-   - These metrics provide insights into the quality of the generated summaries compared to the reference summaries.
+- **Pegasus-large**
+  - Pre-trained using a **gap-sentence generation** objective.
+  - Optimized for **information-dense inputs**, making it well-suited for therapeutic dialogues.
+
+- **T5-large**
+  - Based on a **text-to-text** framework.
+  - Generalizes well across a variety of NLP tasks: summarization, question answering, and translation.
+
+**Fine-Tuning Strategy:**
+- Both models were fine-tuned on the counseling dataset.
+- No domain-specific augmentations were applied at this stage.
+- Training data consisted of:
+  - **Input**: Structured dialogues from the preprocessing step.
+  - **Target**: Ground-truth summaries.
+
+These results provide a reference point for model performance **without relevance-based supervision**.
+
+---
+
+### Relevance-Guided Summarization
+
+Building upon the baseline models, we introduce a **relevance-augmented training setup** using the **Flan-T5-large** model.
+
+#### Relevance-Aware Input Representation
+
+- Each utterance in a dialogue is enriched with:
+  - `Speaker`
+  - `DialogueFunction`
+  - `Sub_topic`
+  - `Emotion`
+  - `Relevance` score computed from sentiment and PHQ-9 cues
+
+- Example enriched utterance:
+   -Therapist [DialogueFunction=question] (Sub_topic=routine) (Emotion=1) (Relevance=High): How have you been sleeping lately?
+   
+- These tags provide **clinical and emotional cues** to help the model prioritize therapeutically significant content.
+
+#### Modeling Strategy
+
+- **Model Used**: Flan-T5-large
+- **Input**: Relevance-tagged dialogues
+- **Target**: Ground-truth summaries (unchanged)
+- **Architecture**: No modifications were made to the model.
+
+**Why Flan-T5?**
+- It is instruction-tuned and excels at **dialogue-centric** NLP tasks.
+- Trained on a diverse mixture of tasks including:
+- Summarization
+- Instruction-following
+- Conversational modeling
+
+#### Objective
+
+This strategy tests whether **lightweight, input-level supervision** via relevance tagging can guide the model to produce:
+- More **clinically meaningful**
+- More **emotionally resonant**
+summaries, without requiring architectural changes.
+
 
 ## Results
 
-The performance of the Pegasus and T5 models is summarized in the table below:
+The following table presents a quantitative comparison between the baseline models (Pegasus and T5) and our relevance-guided model (FlanT5 with rel score). Evaluation metrics include ROUGE scores, BLEU, and BERTScore—each offering different insights into the quality and fidelity of generated summaries.
 
-| Metric    | Pegasus | T5    |
-|-----------|---------|-------|
-| ROUGE-1   | 28.80   | 35.62 |
-| ROUGE-2   | 9.77    | 13.43 |
-| ROUGE-L   | 20.88   | 23.91 |
-| BLEU      | 4.34    | 5.68  |
-| BERTScore | 50.23   | 56.10 |
-| BLEURT    | -0.6896 | -0.5381 |
+| Metric     | Pegasus | T5    | FlanT5 with rel score |
+|------------|---------|-------|------------------------|
+| ROUGE-1    | 31.35   | 35.04 | 39.31                  |
+| ROUGE-2    | 11.18   | 12.30 | 15.30                  |
+| ROUGE-L    | 19.68   | 21.53 | 24.70                  |
+| BLEU       | 2.63    | 2.62  | 5.04                   |
+| BERTScore  | 85.78   | 86.69 | 87.08                  |
 
-### Analysis
+The relevance-guided FlanT5 model outperformed both baselines across all metrics, indicating that the use of sentiment and PHQ-9-based relevance cues led to more informative and clinically aligned summaries. Notably, improvements are significant in ROUGE-1 and BLEU, suggesting better content overlap and fluency in generated summaries.
 
-- **ROUGE Scores**: T5 outperforms Pegasus across all ROUGE metrics, indicating better overlap with reference summaries.
-- **BLEU Score**: T5 achieves a higher BLEU score, suggesting improved n-gram precision.
-- **BERTScore**: T5 also shows a higher BERTScore, reflecting better semantic similarity with reference summaries.
-- **BLEURT**: Both models have negative BLEURT scores, but T5 performs slightly better.
-
-These results demonstrate that T5 is more effective for summarizing mental health conversations in this dataset, providing more accurate and semantically relevant summaries.
 
 ## How to Run
 git clone https://github.com/Dhawz03/Mental-Health-Summarization.git
 cd Mental-Health-Summarization
-Then run all the cells in the given ipynb file
+Then run py files in this order
+-preprocessing.py
+-SA_Training.py
+-scores.py
+-main.py
