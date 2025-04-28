@@ -164,6 +164,7 @@ The relevance-guided FlanT5 model outperformed both baselines across all metrics
 ## How to Run
 git clone https://github.com/Dhawz03/Mental-Health-Summarization.git
 cd Mental-Health-Summarization
+For running the baseline models you can use the already existing  train_dialogues.txt, val_dialogues.txt and test_dialogues.txt files whereas for our main model you would need train_dialogues_f.txt, val_dialogues_f.txt and test_dialogues_f.txt
 Then run py files in this order
 -preprocessing.py
 -SA_Training.py
